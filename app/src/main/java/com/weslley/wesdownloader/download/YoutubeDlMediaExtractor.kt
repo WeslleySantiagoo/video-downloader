@@ -45,6 +45,7 @@ class YoutubeDlMediaExtractor(context: Context) : MediaExtractor {
             .addOption("--skip-download")
             .addOption("--no-playlist")
             .addOption("--no-warnings")
+            .addOption("--extractor-args", "youtube:player_client=android")
             .addOption("--socket-timeout", 20)
 
         val root = try {
@@ -112,6 +113,8 @@ class YoutubeDlMediaExtractor(context: Context) : MediaExtractor {
                 .addOption("--continue")
                 .addOption("--no-overwrites")
                 .addOption("--downloader", "libaria2c.so")
+                .addOption("--downloader-args", "aria2c:-x 4 -k 1M")
+                .addOption("--extractor-args", "youtube:player_client=android")
                 .addOption("-f", "bestaudio[ext=m4a]")
                 .addOption("-o", File(directory, "%(title).100B [%(id)s].%(ext)s").absolutePath)
             executeDownload(fallback, item.id, onProgress)
@@ -126,6 +129,8 @@ class YoutubeDlMediaExtractor(context: Context) : MediaExtractor {
             .addOption("--continue")
             .addOption("--no-overwrites")
             .addOption("--downloader", "libaria2c.so")
+            .addOption("--downloader-args", "aria2c:-x 4 -k 1M")
+            .addOption("--extractor-args", "youtube:player_client=android")
             .addOption("--socket-timeout", 20)
             .addOption("--retries", 5)
             .addOption("-o", File(directory, "%(title).100B [%(id)s].%(ext)s").absolutePath)

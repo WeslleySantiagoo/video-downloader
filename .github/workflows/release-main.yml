@@ -1,0 +1,19 @@
+name: Release stable APK
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    uses: ./.github/workflows/android-release.yml
+    with:
+      version_name: ${{ github.run_number }}
+      tag_name: v${{ github.run_number }}
+      asset_name: WesDownloader-v${{ github.run_number }}-universal.apk
+      prerelease: false
+    secrets: inherit

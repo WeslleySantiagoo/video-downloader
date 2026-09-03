@@ -1,0 +1,7 @@
+<resources>
+    <string name="app_name">WesDownloader</string>
+    <string name="notification_channel_name">Downloads</string>
+    <string name="notification_channel_description">Progresso dos downloads em andamento</string>
+    <string name="notification_cancel">Cancelar</string>
+</resources>
+

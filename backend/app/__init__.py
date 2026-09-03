@@ -1,1 +1,0 @@
-"""Baixaí backend."""

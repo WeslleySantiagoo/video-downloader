@@ -48,4 +48,6 @@ celery -A app.celery_app beat --loglevel=info
 
 O frontend consulta a API por `VITE_API_URL`. O backend mantém apenas estado temporário no Redis; resultados expiram após uma hora e são removidos do storage pelo scheduler.
 
-Para publicar, crie três serviços a partir de `backend/Dockerfile`, sobrescrevendo o comando para API, worker e scheduler como no Compose. O proxy do provedor deve encaminhar corretamente o IP do cliente; configure as opções de proxy confiável do Uvicorn conforme a rede do host para que as cotas por IP não sejam compartilhadas entre todos os visitantes.
+Na Vercel, configure **Root Directory** como `frontend`. O `frontend/vercel.json` já contém os comandos relativos corretos; deixe os campos Install Command, Build Command e Output Directory do painel sem sobrescritas manuais. Defina também `VITE_API_URL` com a URL pública do backend e, em produção, `VITE_TURNSTILE_SITE_KEY`.
+
+Para publicar o backend, crie três serviços a partir de `backend/Dockerfile`, sobrescrevendo o comando para API, worker e scheduler como no Compose. O proxy do provedor deve encaminhar corretamente o IP do cliente; configure as opções de proxy confiável do Uvicorn conforme a rede do host para que as cotas por IP não sejam compartilhadas entre todos os visitantes.

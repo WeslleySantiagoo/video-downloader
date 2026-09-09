@@ -29,5 +29,10 @@ class FormatSelectorTest {
         assertTrue(selector.startsWith("137+bestaudio[ext=m4a]"))
         assertTrue(selector.endsWith("best[height=1080]"))
     }
-}
 
+    @Test
+    fun `nao adiciona segunda faixa quando formato ja contem audio`() {
+        val option = QualityOption("video", "22", "720p", 720, "mp4", null, hasAudio = true)
+        assertEquals("22", FormatSelector.videoDownloadSelector(option))
+    }
+}

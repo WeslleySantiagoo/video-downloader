@@ -9,6 +9,7 @@ import com.weslley.wesdownloader.WesDownloaderApp
 import com.weslley.wesdownloader.data.DownloadEntity
 import com.weslley.wesdownloader.domain.AppError
 import com.weslley.wesdownloader.domain.DownloadStatus
+import com.weslley.wesdownloader.domain.FormatSelector
 import com.weslley.wesdownloader.domain.MediaInspection
 import com.weslley.wesdownloader.domain.MediaMode
 import com.weslley.wesdownloader.domain.QualityOption
@@ -63,6 +64,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             _isInspecting.value = true
             _message.value = null
             try {
+                if (container.repository.hasActive()) throw AppError.Busy()
                 val result = container.extractor.inspect(_url.value)
                 _inspection.value = result
                 _mode.value = MediaMode.VIDEO
@@ -93,7 +95,11 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                     durationSeconds = media.durationSeconds,
                     mode = _mode.value,
                     qualityId = quality.id,
-                    formatId = quality.formatId,
+                    formatId = if (_mode.value == MediaMode.VIDEO) {
+                        FormatSelector.videoDownloadSelector(quality)
+                    } else {
+                        quality.formatId
+                    },
                     qualityLabel = quality.label,
                     container = quality.container,
                     estimatedBytes = quality.estimatedBytes,
@@ -146,6 +152,10 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     fun updateEngine() {
         if (_isUpdating.value) return
         viewModelScope.launch {
+            if (container.repository.hasActive()) {
+                _message.value = AppError.Busy().message
+                return@launch
+            }
             _isUpdating.value = true
             _message.value = runCatching { container.extractor.updateEngine() }
                 .getOrElse { "Nao foi possivel atualizar o mecanismo." }
@@ -180,4 +190,3 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 }
-

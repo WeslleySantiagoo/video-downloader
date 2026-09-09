@@ -9,6 +9,7 @@ data class QualityOption(
     val height: Int?,
     val container: String,
     val estimatedBytes: Long?,
+    val hasAudio: Boolean = false,
 )
 
 data class MediaInspection(
@@ -48,4 +49,3 @@ sealed class AppError(message: String) : Exception(message) {
     class NoSpace : AppError("Nao ha espaco livre suficiente no aparelho.")
     class Busy : AppError("Aguarde o download atual terminar ou cancele-o.")
 }
-

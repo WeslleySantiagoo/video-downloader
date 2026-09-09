@@ -70,7 +70,6 @@ class DownloadService : Service() {
                     else -> "Nao foi possivel concluir o download. Tente novamente."
                 }
                 container.repository.fail(id, DownloadStatus.FAILED, message)
-                container.storage.deleteTemporary(id)
                 notify(id, message, 0, false)
             }
         } finally {

@@ -38,7 +38,7 @@ Requisitos: Android Studio, Android SDK 35 e JDK 17.
 
 O APK de desenvolvimento sera criado em `app/build/outputs/apk/debug/app-debug.apk`.
 
-O projeto usa quatro ABIs (`armeabi-v7a`, `arm64-v8a`, `x86` e `x86_64`) no mesmo APK universal. Isso facilita a instalacao, mas produz um arquivo consideravelmente maior porque Python, yt-dlp, FFmpeg e aria2c sao embarcados.
+O projeto usa quatro ABIs (`armeabi-v7a`, `arm64-v8a`, `x86` e `x86_64`) no mesmo APK universal. Isso facilita a instalacao, mas produz um arquivo consideravelmente maior porque Python, yt-dlp e FFmpeg sao embarcados.
 
 ## Assinatura das releases
 

@@ -27,13 +27,14 @@ object FormatSelector {
                 height = height,
                 container = if (best.extension.equals("mp4", true)) "mp4" else "webm",
                 estimatedBytes = best.fileSize,
+                hasAudio = best.audioCodec != null && best.audioCodec != "none",
             )
         }
         .sortedBy { it.height }
 
     fun videoDownloadSelector(option: QualityOption): String {
+        if (option.hasAudio) return option.formatId
         val audio = if (option.container == "mp4") "bestaudio[ext=m4a]/bestaudio" else "bestaudio[ext=webm]/bestaudio"
-        return "${option.formatId}+$audio/best[height=${option.height}]"
+        return "${option.formatId}+$audio/${option.formatId}/best[height=${option.height}]"
     }
 }
-

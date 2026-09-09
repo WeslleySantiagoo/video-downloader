@@ -1,7 +1,6 @@
 package com.weslley.wesdownloader.download
 
 import android.content.Context
-import com.yausername.aria2c.Aria2c
 import com.yausername.ffmpeg.FFmpeg
 import com.yausername.youtubedl_android.YoutubeDL
 import com.yausername.youtubedl_android.YoutubeDLException
@@ -25,14 +24,15 @@ import java.io.File
 class YoutubeDlMediaExtractor(context: Context) : MediaExtractor {
     private val appContext = context.applicationContext
     private val initialization = Mutex()
+    private val operation = Mutex()
     @Volatile private var initialized = false
+    @Volatile private var updateAttempted = false
 
     override suspend fun initialize() = withContext(Dispatchers.IO) {
         initialization.withLock {
             if (initialized) return@withLock
             YoutubeDL.init(appContext)
             FFmpeg.init(appContext)
-            Aria2c.init(appContext)
             initialized = true
         }
     }
@@ -40,20 +40,33 @@ class YoutubeDlMediaExtractor(context: Context) : MediaExtractor {
     override suspend fun inspect(url: String): MediaInspection = withContext(Dispatchers.IO) {
         initialize()
         val normalized = YouTubeUrlValidator.normalize(url)
+        operation.withLock {
+            if (!updateAttempted) {
+                updateAttempted = true
+                runCatching { updateEngineWithoutLock() }
+            }
+            try {
+                inspectOnce(normalized)
+            } catch (error: AppError) {
+                throw error
+            } catch (error: Exception) {
+                throw AppError.Unavailable()
+            }
+        }
+    }
+
+    private fun inspectOnce(normalized: String): MediaInspection {
         val request = YoutubeDLRequest(normalized)
             .addOption("--dump-single-json")
             .addOption("--skip-download")
             .addOption("--no-playlist")
             .addOption("--no-warnings")
-            .addOption("--extractor-args", "youtube:player_client=android")
-            .addOption("--socket-timeout", 20)
+            .addOption("--socket-timeout", 30)
+            .addOption("--extractor-retries", 3)
+            .addOption("--retry-sleep", "extractor:linear=1:3:1")
 
-        val root = try {
-            val response = YoutubeDL.execute(request)
-            YoutubeDL.objectMapper.readTree(response.out)
-        } catch (error: Exception) {
-            throw AppError.Unavailable()
-        }
+        val response = YoutubeDL.execute(request)
+        val root = YoutubeDL.objectMapper.readTree(response.out)
 
         if (root.path("_type").asText() == "playlist" || root.path("entries").isArray) throw AppError.Playlist()
         if (root.path("is_live").asBoolean(false) || root.path("live_status").asText() in setOf("is_live", "is_upcoming")) {
@@ -81,14 +94,16 @@ class YoutubeDlMediaExtractor(context: Context) : MediaExtractor {
             .mapNotNull { it.path("filesize").takeIf { size -> size.isNumber }?.asLong() }
             .maxOrNull()
 
-        MediaInspection(
+        return MediaInspection(
             mediaId = root.path("id").asText(),
             sourceUrl = normalized,
             title = root.path("title").asText("Video sem titulo").take(200),
             thumbnailUrl = root.path("thumbnail").asText().ifBlank { null },
             durationSeconds = root.path("duration").asInt(0),
             videoOptions = videoOptions.map { option ->
-                option.copy(estimatedBytes = option.estimatedBytes?.let { it + (bestAudioSize ?: 0L) })
+                option.copy(estimatedBytes = option.estimatedBytes?.let {
+                    if (option.hasAudio) it else it + (bestAudioSize ?: 0L)
+                })
             },
             audioOptions = listOf(QualityOption("audio-best", "bestaudio", "Melhor qualidade", null, "mp3", bestAudioSize)),
         )
@@ -100,40 +115,24 @@ class YoutubeDlMediaExtractor(context: Context) : MediaExtractor {
         onProgress: suspend (DownloadProgress) -> Unit,
     ): File = withContext(Dispatchers.IO) {
         initialize()
-        directory.mkdirs()
-        val request = baseRequest(item, directory)
-        try {
-            executeDownload(request, item.id, onProgress)
-        } catch (error: YoutubeDLException) {
-            if (item.mode != MediaMode.AUDIO) throw error
-            directory.listFiles()?.filterNot { it.name.endsWith(".part") }?.forEach { it.delete() }
-            val fallback = YoutubeDLRequest(item.sourceUrl)
-                .addOption("--no-playlist")
-                .addOption("--newline")
-                .addOption("--continue")
-                .addOption("--no-overwrites")
-                .addOption("--downloader", "libaria2c.so")
-                .addOption("--downloader-args", "aria2c:-x 4 -k 1M")
-                .addOption("--extractor-args", "youtube:player_client=android")
-                .addOption("-f", "bestaudio[ext=m4a]")
-                .addOption("-o", File(directory, "%(title).100B [%(id)s].%(ext)s").absolutePath)
-            executeDownload(fallback, item.id, onProgress)
+        operation.withLock {
+            directory.mkdirs()
+            val request = baseRequest(item, directory)
+            try {
+                executeDownload(request, item.id, onProgress)
+            } catch (error: YoutubeDLException) {
+                if (item.mode != MediaMode.AUDIO) throw error
+                directory.listFiles()?.filterNot { it.name.endsWith(".part") }?.forEach { it.delete() }
+                val fallback = reliableRequest(YoutubeDLRequest(item.sourceUrl), directory)
+                    .addOption("-f", "bestaudio[ext=m4a]")
+                executeDownload(fallback, item.id, onProgress)
+            }
+            findOutput(directory)
         }
-        findOutput(directory)
     }
 
     private fun baseRequest(item: DownloadEntity, directory: File): YoutubeDLRequest {
-        val request = YoutubeDLRequest(item.sourceUrl)
-            .addOption("--no-playlist")
-            .addOption("--newline")
-            .addOption("--continue")
-            .addOption("--no-overwrites")
-            .addOption("--downloader", "libaria2c.so")
-            .addOption("--downloader-args", "aria2c:-x 4 -k 1M")
-            .addOption("--extractor-args", "youtube:player_client=android")
-            .addOption("--socket-timeout", 20)
-            .addOption("--retries", 5)
-            .addOption("-o", File(directory, "%(title).100B [%(id)s].%(ext)s").absolutePath)
+        val request = reliableRequest(YoutubeDLRequest(item.sourceUrl), directory)
 
         return if (item.mode == MediaMode.AUDIO) {
             request
@@ -142,19 +141,27 @@ class YoutubeDlMediaExtractor(context: Context) : MediaExtractor {
                 .addOption("--audio-format", "mp3")
                 .addOption("--audio-quality", "0")
         } else {
-            val option = QualityOption(
-                id = item.qualityId,
-                formatId = item.formatId,
-                label = item.qualityLabel,
-                height = item.qualityLabel.removeSuffix("p").toIntOrNull(),
-                container = item.container,
-                estimatedBytes = item.estimatedBytes,
-            )
             request
-                .addOption("-f", FormatSelector.videoDownloadSelector(option))
+                .addOption("-f", item.formatId)
                 .addOption("--merge-output-format", item.container)
         }
     }
+
+    private fun reliableRequest(request: YoutubeDLRequest, directory: File): YoutubeDLRequest = request
+        .addOption("--ignore-config")
+        .addOption("--no-playlist")
+        .addOption("--newline")
+        .addOption("--continue")
+        .addOption("--no-overwrites")
+        .addOption("--socket-timeout", 30)
+        .addOption("--retries", 10)
+        .addOption("--fragment-retries", 10)
+        .addOption("--file-access-retries", 3)
+        .addOption("--extractor-retries", 3)
+        .addOption("--retry-sleep", "http:linear=1:5:1")
+        .addOption("--retry-sleep", "fragment:exp=1:10")
+        .addOption("--throttled-rate", "100K")
+        .addOption("-o", File(directory, "%(title).100B [%(id)s].%(ext)s").absolutePath)
 
     private fun executeDownload(
         request: YoutubeDLRequest,
@@ -180,7 +187,14 @@ class YoutubeDlMediaExtractor(context: Context) : MediaExtractor {
 
     override suspend fun updateEngine(): String = withContext(Dispatchers.IO) {
         initialize()
-        when (YoutubeDL.updateYoutubeDL(appContext, YoutubeDL.UpdateChannel.STABLE)) {
+        operation.withLock {
+            updateAttempted = true
+            updateEngineWithoutLock()
+        }
+    }
+
+    private fun updateEngineWithoutLock(): String {
+        return when (YoutubeDL.updateYoutubeDL(appContext, YoutubeDL.UpdateChannel.STABLE)) {
             YoutubeDL.UpdateStatus.DONE -> "Mecanismo atualizado"
             YoutubeDL.UpdateStatus.ALREADY_UP_TO_DATE -> "Mecanismo ja esta atualizado"
             null -> "Nao foi possivel verificar atualizacoes"

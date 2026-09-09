@@ -141,8 +141,10 @@ class YoutubeDlMediaExtractor(context: Context) : MediaExtractor {
                 .addOption("--audio-format", "mp3")
                 .addOption("--audio-quality", "0")
         } else {
+            val height = item.qualityLabel.removeSuffix("p").toIntOrNull() ?: 2160
+            val selector = FormatSelector.repairPersistedVideoSelector(item.formatId, height, item.container)
             request
-                .addOption("-f", item.formatId)
+                .addOption("-f", selector)
                 .addOption("--merge-output-format", item.container)
         }
     }

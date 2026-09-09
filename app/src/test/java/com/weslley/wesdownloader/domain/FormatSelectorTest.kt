@@ -27,12 +27,24 @@ class FormatSelectorTest {
         val option = QualityOption("video", "137", "1080p", 1080, "mp4", null)
         val selector = FormatSelector.videoDownloadSelector(option)
         assertTrue(selector.startsWith("137+bestaudio[ext=m4a]"))
-        assertTrue(selector.endsWith("best[height=1080]"))
+        assertTrue(selector.contains("/137+bestaudio/"))
+        assertTrue(selector.endsWith("best[height<=?1080]"))
     }
 
     @Test
     fun `nao adiciona segunda faixa quando formato ja contem audio`() {
         val option = QualityOption("video", "22", "720p", 720, "mp4", null, hasAudio = true)
         assertEquals("22", FormatSelector.videoDownloadSelector(option))
+    }
+
+    @Test
+    fun `repara seletor persistido com precedencia incorreta`() {
+        val antigo = "137+bestaudio[ext=m4a]/bestaudio/137/best[height=1080]"
+        val reparado = FormatSelector.repairPersistedVideoSelector(antigo, 1080, "mp4")
+
+        assertEquals(
+            "137+bestaudio[ext=m4a]/137+bestaudio/best[height<=?1080][ext=mp4]/best[height<=?1080]",
+            reparado,
+        )
     }
 }

@@ -13,13 +13,16 @@ import com.weslley.wesdownloader.domain.FormatSelector
 import com.weslley.wesdownloader.domain.MediaInspection
 import com.weslley.wesdownloader.domain.MediaMode
 import com.weslley.wesdownloader.domain.QualityOption
+import com.weslley.wesdownloader.domain.YouTubeUrlValidator
 import com.weslley.wesdownloader.download.DownloadService
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.util.UUID
 
 class AppViewModel(application: Application) : AndroidViewModel(application) {
@@ -35,10 +38,11 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     val selectedQuality = _selectedQuality.asStateFlow()
     private val _isInspecting = MutableStateFlow(false)
     val isInspecting = _isInspecting.asStateFlow()
-    private val _isUpdating = MutableStateFlow(false)
-    val isUpdating = _isUpdating.asStateFlow()
     private val _message = MutableStateFlow<String?>(null)
     val message = _message.asStateFlow()
+    private val _clipboardSuggestion = MutableStateFlow<String?>(null)
+    val clipboardSuggestion = _clipboardSuggestion.asStateFlow()
+    private var lastHandledClipboardUrl: String? = null
 
     val downloads: StateFlow<List<DownloadEntity>> = container.repository.observeAll()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
@@ -46,6 +50,26 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     fun setUrl(value: String) {
         _url.value = extractUrl(value)
         _message.value = null
+    }
+
+    fun suggestClipboardUrl(value: String) {
+        val normalized = runCatching { YouTubeUrlValidator.normalize(extractUrl(value)) }.getOrNull() ?: return
+        if (normalized != _url.value && normalized != lastHandledClipboardUrl) {
+            _clipboardSuggestion.value = normalized
+        }
+    }
+
+    fun useClipboardSuggestion() {
+        val suggestion = _clipboardSuggestion.value ?: return
+        lastHandledClipboardUrl = suggestion
+        _clipboardSuggestion.value = null
+        setUrl(suggestion)
+        inspect()
+    }
+
+    fun dismissClipboardSuggestion() {
+        lastHandledClipboardUrl = _clipboardSuggestion.value
+        _clipboardSuggestion.value = null
     }
 
     fun setMode(value: MediaMode) {
@@ -144,22 +168,15 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     fun remove(item: DownloadEntity) {
         viewModelScope.launch {
-            container.storage.deleteTemporary(item.id)
-            container.repository.delete(item.id)
-        }
-    }
-
-    fun updateEngine() {
-        if (_isUpdating.value) return
-        viewModelScope.launch {
-            if (container.repository.hasActive()) {
-                _message.value = AppError.Busy().message
+            val deleted = withContext(Dispatchers.IO) {
+                container.storage.deletePublished(item.outputUri)
+            }
+            if (!deleted) {
+                _message.value = "Nao foi possivel apagar o arquivo do aparelho."
                 return@launch
             }
-            _isUpdating.value = true
-            _message.value = runCatching { container.extractor.updateEngine() }
-                .getOrElse { "Nao foi possivel atualizar o mecanismo." }
-            _isUpdating.value = false
+            container.storage.deleteTemporary(item.id)
+            container.repository.delete(item.id)
         }
     }
 

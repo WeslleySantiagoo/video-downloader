@@ -8,6 +8,7 @@ import android.os.Build
 import android.os.Environment
 import android.os.StatFs
 import android.provider.MediaStore
+import androidx.annotation.RequiresApi
 import androidx.core.content.FileProvider
 import com.weslley.wesdownloader.domain.MediaMode
 import java.io.File
@@ -26,6 +27,19 @@ class DeviceStorage(private val context: Context) {
         tempDirectory(id).deleteRecursively()
     }
 
+    fun deletePublished(uriValue: String?): Boolean {
+        if (uriValue.isNullOrBlank()) return true
+        val uri = runCatching { Uri.parse(uriValue) }.getOrNull() ?: return false
+        return runCatching {
+            if (uri.authority == "${context.packageName}.files") {
+                deleteLegacyPublishedFile(uri)
+            } else {
+                context.contentResolver.delete(uri, null, null)
+                true
+            }
+        }.getOrDefault(false)
+    }
+
     fun publish(source: File, title: String, mode: MediaMode): Pair<Uri, String> {
         val extension = source.extension.ifBlank { if (mode == MediaMode.AUDIO) "mp3" else "mp4" }
         val fileName = "${FileNames.sanitize(title)}.$extension"
@@ -38,14 +52,15 @@ class DeviceStorage(private val context: Context) {
         }
 
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            publishWithMediaStore(source, fileName, mime, mode)
+            publishWithMediaStore(source, fileName, mime)
         } else {
             publishLegacy(source, fileName, mime)
         }
     }
 
-    private fun publishWithMediaStore(source: File, fileName: String, mime: String, mode: MediaMode): Pair<Uri, String> {
-        val collection = if (mode == MediaMode.AUDIO) MediaStore.Audio.Media.EXTERNAL_CONTENT_URI else MediaStore.Video.Media.EXTERNAL_CONTENT_URI
+    @RequiresApi(Build.VERSION_CODES.Q)
+    private fun publishWithMediaStore(source: File, fileName: String, mime: String): Pair<Uri, String> {
+        val collection = MediaStore.Downloads.EXTERNAL_CONTENT_URI
         val values = ContentValues().apply {
             put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
             put(MediaStore.MediaColumns.MIME_TYPE, mime)
@@ -89,4 +104,17 @@ class DeviceStorage(private val context: Context) {
             counter++
         }
     }
+
+    @Suppress("DEPRECATION")
+    private fun deleteLegacyPublishedFile(uri: Uri): Boolean {
+        val directory = File(
+            Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
+            "WesDownloader",
+        ).canonicalFile
+        val fileName = uri.lastPathSegment?.substringAfterLast('/') ?: return false
+        val target = File(directory, fileName).canonicalFile
+        if (target.parentFile != directory) return false
+        return !target.exists() || target.delete()
+    }
+
 }

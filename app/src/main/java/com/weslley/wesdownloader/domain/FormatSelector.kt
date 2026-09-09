@@ -34,7 +34,16 @@ object FormatSelector {
 
     fun videoDownloadSelector(option: QualityOption): String {
         if (option.hasAudio) return option.formatId
-        val audio = if (option.container == "mp4") "bestaudio[ext=m4a]/bestaudio" else "bestaudio[ext=webm]/bestaudio"
-        return "${option.formatId}+$audio/${option.formatId}/best[height=${option.height}]"
+        val preferredAudio = if (option.container == "mp4") "bestaudio[ext=m4a]" else "bestaudio[ext=webm]"
+        val combined = "best[height<=?${option.height}][ext=${option.container}]/best[height<=?${option.height}]"
+        return "${option.formatId}+$preferredAudio/${option.formatId}+bestaudio/$combined"
+    }
+
+    fun repairPersistedVideoSelector(selector: String, height: Int, container: String): String {
+        if ('+' !in selector && '/' !in selector) return selector
+        val rawFormatId = selector.substringBefore('+').substringBefore('/')
+        return videoDownloadSelector(
+            QualityOption("persisted", rawFormatId, "${height}p", height, container, null),
+        )
     }
 }

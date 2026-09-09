@@ -6,6 +6,7 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.os.IBinder
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import com.weslley.wesdownloader.MainActivity
@@ -59,22 +60,23 @@ class DownloadService : Service() {
             val (uri, fileName) = container.storage.publish(output, item.title, item.mode)
             container.repository.finish(id, uri.toString(), fileName)
             container.storage.deleteTemporary(id)
-            notify(id, "Download concluido", 100, false)
         } catch (_: CancellationException) {
             // O estado de cancelamento e registrado por cancelDownload.
         } catch (error: Exception) {
+            Log.e(TAG, "Falha durante o download $id", error)
             val current = container.repository.get(id)
             if (current?.status != DownloadStatus.CANCELLED) {
                 val message = when (error) {
                     is AppError -> error.message ?: "Falha no download"
-                    else -> "Nao foi possivel concluir o download. Tente novamente."
+                    else -> DownloadFailureMessage.from(error)
                 }
                 container.repository.fail(id, DownloadStatus.FAILED, message)
-                notify(id, message, 0, false)
+                notify(id, message, current?.progress ?: 0, false)
             }
         } finally {
             activeId = null
-            stopForeground(STOP_FOREGROUND_DETACH)
+            getSystemService(android.app.NotificationManager::class.java).cancel(notificationId(id))
+            stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelfResult(startId)
         }
     }
@@ -117,7 +119,7 @@ class DownloadService : Service() {
             .setOnlyAlertOnce(true)
             .setOngoing(ongoing)
             .setAutoCancel(!ongoing)
-            .setProgress(100, progress, ongoing && progress <= 1)
+            .setProgress(100, progress, false)
             .apply {
                 if (ongoing) addAction(0, getString(R.string.notification_cancel), cancelIntent)
             }
@@ -131,6 +133,7 @@ class DownloadService : Service() {
     }
 
     companion object {
+        private const val TAG = "DownloadService"
         const val CHANNEL_ID = "wesdownloader_downloads"
         private const val ACTION_START = "com.weslley.wesdownloader.START"
         private const val ACTION_CANCEL = "com.weslley.wesdownloader.CANCEL"

@@ -4,7 +4,14 @@
         <item name="android:windowLightStatusBar">false</item>
         <item name="android:statusBarColor">#0B120E</item>
         <item name="android:navigationBarColor">#0B120E</item>
+        <item name="android:windowBackground">#0B120E</item>
         <item name="android:windowActionModeOverlay">true</item>
     </style>
-</resources>
 
+    <style name="Theme.WesDownloader.Splash" parent="Theme.SplashScreen">
+        <item name="android:windowBackground">@drawable/splash_background</item>
+        <item name="windowSplashScreenBackground">@color/splash_background</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_splash</item>
+        <item name="postSplashScreenTheme">@style/Theme.WesDownloader</item>
+    </style>
+</resources>

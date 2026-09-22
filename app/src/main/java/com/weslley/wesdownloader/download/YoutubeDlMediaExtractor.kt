@@ -110,6 +110,23 @@ class YoutubeDlMediaExtractor(context: Context) : MediaExtractor {
         directory.mkdirs()
         val request = baseRequest(item, directory)
         try {
+            downloadOnce(item, directory, request, onProgress)
+        } catch (error: YoutubeDLException) {
+            if (!isForbidden(error)) throw error
+            onProgress(DownloadProgress(1, 0, "Atualizando mecanismo e retomando download"))
+            updateEngine()
+            downloadOnce(item, directory, request, onProgress)
+        }
+        findOutput(directory)
+    }
+
+    private fun downloadOnce(
+        item: DownloadEntity,
+        directory: File,
+        request: YoutubeDLRequest,
+        onProgress: suspend (DownloadProgress) -> Unit,
+    ) {
+        try {
             executeDownload(request, item.id, onProgress)
         } catch (error: YoutubeDLException) {
             if (item.mode != MediaMode.AUDIO) throw error
@@ -118,8 +135,11 @@ class YoutubeDlMediaExtractor(context: Context) : MediaExtractor {
                 .addOption("-f", "bestaudio[ext=m4a]")
             executeDownload(fallback, item.id, onProgress)
         }
-        findOutput(directory)
     }
+
+    private fun isForbidden(error: YoutubeDLException): Boolean = generateSequence<Throwable>(error) { it.cause }
+        .mapNotNull { it.message }
+        .any { it.contains("403") || it.contains("forbidden", ignoreCase = true) }
 
     private fun baseRequest(item: DownloadEntity, directory: File): YoutubeDLRequest {
         val request = reliableRequest(YoutubeDLRequest(item.sourceUrl), directory)

@@ -25,18 +25,25 @@ import com.weslley.wesdownloader.ui.WesDownloaderScreen
 import com.weslley.wesdownloader.ui.theme.WesDownloaderTheme
 
 class MainActivity : ComponentActivity() {
-    private var sharedText by mutableStateOf<String?>(null)
+    private var sharedRequest by mutableStateOf<SharedRequest?>(null)
+
+    private data class SharedRequest(val text: String, val id: Long)
     private val permissionLauncher = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         installSplashScreen()
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        sharedText = intent.sharedText()
+        sharedRequest = intent.sharedText()?.let { SharedRequest(it, System.nanoTime()) }
         requestRuntimePermissions()
         setContent {
             val appViewModel: AppViewModel = viewModel(factory = AppViewModel.factory(application))
-            LaunchedEffect(sharedText) { sharedText?.let(appViewModel::setUrl) }
+            LaunchedEffect(sharedRequest?.id) {
+                sharedRequest?.text?.let { sharedText ->
+                    appViewModel.setUrl(sharedText)
+                    appViewModel.inspect()
+                }
+            }
             WesDownloaderTheme {
                 WesDownloaderScreen(
                     viewModel = appViewModel,
@@ -50,7 +57,7 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        sharedText = intent.sharedText()
+        sharedRequest = intent.sharedText()?.let { SharedRequest(it, System.nanoTime()) }
     }
 
     private fun requestRuntimePermissions() {

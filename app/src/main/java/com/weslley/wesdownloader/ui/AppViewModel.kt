@@ -88,7 +88,6 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             _isInspecting.value = true
             _message.value = null
             try {
-                if (container.repository.hasActive()) throw AppError.Busy()
                 val result = container.extractor.inspect(_url.value)
                 _inspection.value = result
                 _mode.value = MediaMode.VIDEO
@@ -107,7 +106,6 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         val quality = _selectedQuality.value ?: return
         viewModelScope.launch {
             try {
-                if (container.repository.hasActive()) throw AppError.Busy()
                 if (!container.storage.hasSpaceFor(quality.estimatedBytes)) throw AppError.NoSpace()
                 val now = System.currentTimeMillis()
                 val item = DownloadEntity(
@@ -151,10 +149,6 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     fun resume(item: DownloadEntity) {
         viewModelScope.launch {
-            if (container.repository.hasActive()) {
-                _message.value = AppError.Busy().message
-                return@launch
-            }
             container.repository.update(item.copy(
                 status = DownloadStatus.QUEUED,
                 progress = 0,

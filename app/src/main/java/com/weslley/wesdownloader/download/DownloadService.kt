@@ -15,18 +15,19 @@ import com.weslley.wesdownloader.WesDownloaderApp
 import com.weslley.wesdownloader.domain.AppError
 import com.weslley.wesdownloader.domain.DownloadStatus
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
+import java.util.concurrent.ConcurrentHashMap
 
 class DownloadService : Service() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val container by lazy { (application as WesDownloaderApp).container }
-    private var activeJob: Job? = null
-    @Volatile private var activeId: String? = null
+    private val jobs = ConcurrentHashMap<String, Job>()
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -37,10 +38,14 @@ class DownloadService : Service() {
             return START_NOT_STICKY
         }
 
-        if (activeJob?.isActive == true) return START_NOT_STICKY
-        activeId = id
-        startForeground(notificationId(id), buildNotification("Preparando download", 0, id, true))
-        activeJob = scope.launch { process(id, startId) }
+        val job = scope.launch(start = CoroutineStart.LAZY) { process(id, startId) }
+        if (jobs.putIfAbsent(id, job) != null) return START_NOT_STICKY
+        if (jobs.size == 1) {
+            startForeground(notificationId(id), buildNotification("Preparando download", 0, id, true))
+        } else {
+            notify(id, "Preparando download", 0, true)
+        }
+        job.start()
         return START_NOT_STICKY
     }
 
@@ -74,22 +79,26 @@ class DownloadService : Service() {
                 notify(id, message, current?.progress ?: 0, false)
             }
         } finally {
-            activeId = null
+            jobs.remove(id)
             getSystemService(android.app.NotificationManager::class.java).cancel(notificationId(id))
-            stopForeground(STOP_FOREGROUND_REMOVE)
-            stopSelfResult(startId)
+            if (jobs.isEmpty()) {
+                stopForeground(STOP_FOREGROUND_REMOVE)
+                stopSelfResult(startId)
+            }
         }
     }
 
     private fun cancelDownload(id: String) {
         container.extractor.cancel(id)
-        activeJob?.cancel()
+        jobs[id]?.cancel()
         scope.launch {
             container.repository.fail(id, DownloadStatus.CANCELLED, "Download cancelado")
             container.storage.deleteTemporary(id)
             getSystemService(android.app.NotificationManager::class.java).cancel(notificationId(id))
-            stopForeground(STOP_FOREGROUND_REMOVE)
-            stopSelf()
+            if (jobs.isEmpty()) {
+                stopForeground(STOP_FOREGROUND_REMOVE)
+                stopSelf()
+            }
         }
     }
 
@@ -127,7 +136,7 @@ class DownloadService : Service() {
     }
 
     override fun onDestroy() {
-        activeId?.let { container.extractor.cancel(it) }
+        jobs.keys.forEach { container.extractor.cancel(it) }
         scope.cancel()
         super.onDestroy()
     }
